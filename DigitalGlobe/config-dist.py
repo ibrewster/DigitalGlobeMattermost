@@ -1,0 +1,6 @@
+IMAP_SERVER = "webmail.myhost.com"
+IMAP_USER = "myuser"
+IMAP_PASSWORD = "mypass"
+
+MATTERMOST_USER = "MM_USER"
+MATTERMOST_PASSWORD = "MM_PASS"
