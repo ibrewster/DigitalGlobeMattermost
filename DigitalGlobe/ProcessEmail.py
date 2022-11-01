@@ -51,7 +51,9 @@ def gmail_authenticate():
 
 
 def search_messages(service, query):
-    result = service.users().messages().list(userId='me', q=query).execute()
+    result = service.users().messages().list(userId='me',
+                                             q=query,
+                                             labelIds = ['INBOX']).execute()
     messages = []
     if 'messages' in result:
         messages.extend(result['messages'])
@@ -126,6 +128,15 @@ def get_email():
 
             upload_to_mattermost(feature_id, file_stream, volcano, mattermost,
                                  channel_id)
+
+            # Archive the message
+            modify_body = {
+                "addLabelIds": [],
+                "removeLabelIds": ['UNREAD', 'INBOX'],
+            }
+            service.users().messages().modify(userId = "me",
+                                              id = message_id,
+                                              body = modify_body).execute()
 
 
 if __name__ == "__main__":
