@@ -17,6 +17,8 @@ from google.auth.transport.requests import Request
 # for encoding/decoding messages in base64
 from base64 import urlsafe_b64decode
 
+FILEDIR = os.path.dirname(__file__)
+
 def get_colored_volcanoes():
     try:
         conn = pymysql.connect(host=config.MYSQL_SERVER, user=config.MYSQL_USER,
@@ -56,7 +58,8 @@ def gmail_authenticate():
     creds = None
     # the file token.pickle stores the user's access and refresh tokens, and is
     # created automatically when the authorization flow completes for the first time
-    if os.path.exists("token.pickle"):
+    token_path = os.path.join(FILEDIR, 'token.pickle')
+    if os.path.exists(token_path):
         with open("token.pickle", "rb") as token:
             creds = pickle.load(token)
     # if there are no (valid) credentials availablle, let the user log in.
@@ -64,7 +67,8 @@ def gmail_authenticate():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+            creds_path = os.path.join(FILEDIR, 'credentials.json')            
+            flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
             creds = flow.run_local_server(port=0)
         # save the credentials for the next run
         with open("token.pickle", "wb") as token:
