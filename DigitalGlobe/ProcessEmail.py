@@ -102,8 +102,8 @@ def upload_to_mattermost(feature_id, image, meta, mattermost, channel_id):
 
     matt_id = upload_result['file_infos'][0]['id']
     matt_message = f"""### {volcano.title()} image available
-**Feature ID:** {feature_id}
 **Published Date:** {date.strftime('%Y-%m-%d %H:%M:%S')}
+**Feature ID:** {feature_id}
 **Download URL:** {url}
 """
 
@@ -165,14 +165,13 @@ def process_email():
         metadata = parse_metadata(metadata)
         
         # The volcano is the same for all attachments, so just grab the "first" one
-        volcano:str = metadata.values()[0]['volcano']
+        volcano:str = tuple(metadata.values())[0]['volcano']
         if volcano.lower() not in colored_volcanoes:
             continue        
         
         for attachment, attachment_id in attachment_headers:
             feature_id = attachment['filename']
-            
-            meta = metadata[attachment_id]
+            meta = metadata[feature_id]
             
 
             print(f"New imagery for {volcano}")
@@ -183,17 +182,17 @@ def process_email():
             file_stream = BytesIO(file_data)
             file_stream.seek(0)
 
-            # upload_to_mattermost(feature_id, file_stream, meta, mattermost,
-                                 # channel_id)
+            upload_to_mattermost(feature_id, file_stream, meta, mattermost,
+                                 channel_id)
 
-            # # Archive the message
-            # modify_body = {
-                # "addLabelIds": [],
-                # "removeLabelIds": ['UNREAD', 'INBOX'],
-            # }
-            # service.users().messages().modify(userId = "me",
-                                              # id = message_id,
-                                              # body = modify_body).execute()
+            # Archive the message
+            modify_body = {
+                "addLabelIds": [],
+                "removeLabelIds": ['UNREAD', 'INBOX'],
+            }
+            service.users().messages().modify(userId = "me",
+                                              id = message_id,
+                                              body = modify_body).execute()
 
 
 if __name__ == "__main__":
