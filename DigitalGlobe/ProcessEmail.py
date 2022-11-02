@@ -78,8 +78,8 @@ def gmail_authenticate():
 
 def search_messages(service, query):
     result = service.users().messages().list(userId='me',
-                                             q=query
-                                             # labelIds = ['INBOX']
+                                             q=query, 
+                                             labelIds = ['INBOX']
                                              ).execute()
     messages = []
     if 'messages' in result:
@@ -170,7 +170,8 @@ def process_email():
         
         # The volcano is the same for all attachments, so just grab the "first" one
         volcano:str = tuple(metadata.values())[0]['volcano']
-        if volcano.lower() not in colored_volcanoes:
+        if volcano.lower().strip() not in colored_volcanoes:
+            print(f"Skipping {volcano} as it is not at code")
             continue        
         
         for attachment, attachment_id in attachment_headers:
