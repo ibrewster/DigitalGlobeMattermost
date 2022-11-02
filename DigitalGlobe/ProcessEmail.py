@@ -2,9 +2,12 @@ import config
 import os
 import pickle
 
+from datetime import datetime, timezone
 from io import BytesIO
+from xml.etree import ElementTree
 
 import mattermostdriver
+import pymysql
 
 # Gmail API utils
 from googleapiclient.discovery import build
@@ -14,6 +17,25 @@ from google.auth.transport.requests import Request
 # for encoding/decoding messages in base64
 from base64 import urlsafe_b64decode
 
+def get_colored_volcanoes():
+    try:
+        conn = pymysql.connect(host=config.MYSQL_SERVER, user=config.MYSQL_USER,
+                               password=config.MYSQL_PASSWORD,
+                               database=config.MYSQL_DB)
+        cur = conn.cursor()
+        SQL = """SELECT
+            volcano_name
+        FROM current_codes
+        INNER JOIN volcano
+        ON volcano.volcano_id=current_codes.volcano_id
+        WHERE color_code NOT IN ('GREEN','UNASSIGNED')"""
+        cur.execute(SQL)
+        to_check = [x[0].lower() for x in cur]
+        conn.close()
+    except:
+        to_check = []
+        
+    return to_check
 
 def connect_to_mattermost():
     mattermost = mattermostdriver.Driver({
@@ -52,8 +74,9 @@ def gmail_authenticate():
 
 def search_messages(service, query):
     result = service.users().messages().list(userId='me',
-                                             q=query,
-                                             labelIds = ['INBOX']).execute()
+                                             q=query
+                                             # labelIds = ['INBOX']
+                                             ).execute()
     messages = []
     if 'messages' in result:
         messages.extend(result['messages'])
@@ -65,7 +88,9 @@ def search_messages(service, query):
     return messages
 
 
-def upload_to_mattermost(feature_id, image, volcano, mattermost, channel_id):
+def upload_to_mattermost(feature_id, image, meta, mattermost, channel_id):
+    volcano = meta['volcano']
+    date = meta['date']
     filename = f"{feature_id}.png"
     url = f"https://evwhs.digitalglobe.com/myDigitalGlobe/autoLoginService?featureId={feature_id}"
 
@@ -78,6 +103,7 @@ def upload_to_mattermost(feature_id, image, volcano, mattermost, channel_id):
     matt_id = upload_result['file_infos'][0]['id']
     matt_message = f"""### {volcano.title()} image available
 **Feature ID:** {feature_id}
+**Published Date:** {date.strftime('%Y-%m-%d %H:%M:%S')}
 **Download URL:** {url}
 """
 
@@ -87,36 +113,67 @@ def upload_to_mattermost(feature_id, image, volcano, mattermost, channel_id):
         'file_ids': [matt_id],
     })
 
+def parse_metadata(metadata):
+    metadata = urlsafe_b64decode(metadata.get('data'))
+    root = ElementTree.fromstring(metadata)
+    items = root[0].findall('item')
+    info = {}
+    for item in items:
+        ident_str = item.find('title').text
+        pub_date = item.find('pubDate').text
+        pub_date = datetime.strptime(pub_date[5:],
+                                     '%d %b %Y %H:%M:%S %Z').replace(tzinfo = timezone.utc)
+        ident_info = dict(x.split(': ') for x in ident_str.split(' - '))
+        ident_info['date'] = pub_date
+        ident_info['volcano'] = ident_info['Area'].replace(' new', '')
+        info[ident_info['FeatureID']] = ident_info
+    
+    return info
 
-def get_email():
+def process_email():
     service = gmail_authenticate()
     messages = search_messages(service, "from:noreply@digitalglobe.com")
-    if messages:
-        mattermost, channel_id = connect_to_mattermost()
-    else:
+    if not messages:
         print("No new messages")
-        return
+        return        
+    
+    mattermost, channel_id = connect_to_mattermost()
+    colored_volcanoes = get_colored_volcanoes()
 
     for message in messages:
         message_id = message['id']
         msg = service.users().messages().get(userId='me', id=message_id, format='full').execute()
         print('----------------')
-        volcano = next(
-            i['value']
-            for i in msg['payload']['headers']
-            if i["name"] == "Subject"
-        )
-        volcano = volcano.split(':')[1].replace('new_archive', '').strip()
-        print("Subject: ", volcano)
+        
         attachment_headers = [
             (part, part['body'].get('attachmentId'))
             for part in msg['payload']['parts']
             if part['mimeType'] == 'application/octet-stream'
+            and part['filename'] != 'metadata'
         ]
+        
+        metadata_id = next(
+            part['body'].get('attachmentId')
+            for part in msg['payload']['parts']
+            if part['mimeType'] == 'application/octet-stream'
+            and part['filename'] == 'metadata'
+        )
+        
+        metadata = service.users().messages().attachments()\
+                .get(id = metadata_id, userId = 'me', messageId = message_id).execute()
+        
+        metadata = parse_metadata(metadata)
+        
+        # The volcano is the same for all attachments, so just grab the "first" one
+        volcano:str = metadata.values()[0]['volcano']
+        if volcano.lower() not in colored_volcanoes:
+            continue        
+        
         for attachment, attachment_id in attachment_headers:
             feature_id = attachment['filename']
-            if feature_id == "metadata":
-                continue
+            
+            meta = metadata[attachment_id]
+            
 
             print(f"New imagery for {volcano}")
             file = service.users().messages().attachments()\
@@ -126,18 +183,18 @@ def get_email():
             file_stream = BytesIO(file_data)
             file_stream.seek(0)
 
-            upload_to_mattermost(feature_id, file_stream, volcano, mattermost,
-                                 channel_id)
+            # upload_to_mattermost(feature_id, file_stream, meta, mattermost,
+                                 # channel_id)
 
-            # Archive the message
-            modify_body = {
-                "addLabelIds": [],
-                "removeLabelIds": ['UNREAD', 'INBOX'],
-            }
-            service.users().messages().modify(userId = "me",
-                                              id = message_id,
-                                              body = modify_body).execute()
+            # # Archive the message
+            # modify_body = {
+                # "addLabelIds": [],
+                # "removeLabelIds": ['UNREAD', 'INBOX'],
+            # }
+            # service.users().messages().modify(userId = "me",
+                                              # id = message_id,
+                                              # body = modify_body).execute()
 
 
 if __name__ == "__main__":
-    get_email()
+    process_email()
