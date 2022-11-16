@@ -170,9 +170,9 @@ def process_email():
         
         # The volcano is the same for all attachments, so just grab the "first" one
         volcano:str = tuple(metadata.values())[0]['volcano']
-        if volcano.lower().strip() not in colored_volcanoes:
-            print(f"Skipping {volcano} as it is not at code")
-            continue        
+        # if volcano.lower().strip() not in colored_volcanoes:
+            # print(f"Skipping {volcano} as it is not at code")
+            # continue        
         
         for attachment, attachment_id in attachment_headers:
             feature_id = attachment['filename']
