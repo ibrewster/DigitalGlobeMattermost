@@ -97,25 +97,34 @@ def upload_to_mattermost(feature_id, image, meta, mattermost, channel_id):
     date = meta['date']
     filename = f"{feature_id}.png"
     url = f"https://evwhs.digitalglobe.com/myDigitalGlobe/autoLoginService?featureId={feature_id}"
-
-    # First, upload the thumbnail
-    upload_result = mattermost.files.upload_file(
-        channel_id=channel_id,
-        files={'files': (filename, image)}
-    )
-
-    matt_id = upload_result['file_infos'][0]['id']
+    
     matt_message = f"""### {volcano.title()} image available
 **Published Date:** {date.strftime('%Y-%m-%d %H:%M:%S')}
 **Feature ID:** {feature_id}
 **Download URL:** {url}
 """
-
-    mattermost.posts.create_post({
+    post_payload = {
         'channel_id': channel_id,
-        'message': matt_message,
-        'file_ids': [matt_id],
-    })
+    }    
+
+    # First, upload the thumbnail, if any
+    if image is not None:
+        upload_result = mattermost.files.upload_file(
+            channel_id=channel_id,
+            files={'files': (filename, image)}
+        )
+
+        matt_id = upload_result['file_infos'][0]['id']
+        post_payload['file_ids'] = [matt_id]
+    else:
+        matt_message += """
+
+No thumbnail available for this image :(
+        """
+        
+    post_payload['message'] = matt_message
+
+    mattermost.posts.create_post(post_payload)
 
 def parse_metadata(metadata):
     metadata = urlsafe_b64decode(metadata.get('data'))
@@ -149,12 +158,12 @@ def process_email():
         msg = service.users().messages().get(userId='me', id=message_id, format='full').execute()
         print('----------------')
         
-        attachment_headers = [
-            (part, part['body'].get('attachmentId'))
+        attachment_headers = {
+            part['filename']: (part, part['body'].get('attachmentId'))
             for part in msg['payload']['parts']
             if part['mimeType'] == 'application/octet-stream'
             and part['filename'] != 'metadata'
-        ]
+        }
         
         metadata_id = next(
             part['body'].get('attachmentId')
@@ -174,22 +183,24 @@ def process_email():
             # print(f"Skipping {volcano} as it is not at code")
             # continue        
         
-        for attachment, attachment_id in attachment_headers:
-            feature_id = attachment['filename']
-            meta = metadata[feature_id]
+        for feature_id, meta in metadata.items():
+            # See if we have an attachment with this file name
+            attachment, attachment_id = attachment_headers.get(feature_id, (None, None))
             
-
             print(f"New imagery for {volcano}")
-            file = service.users().messages().attachments()\
-                .get(id = attachment_id, userId = 'me', messageId = message_id).execute()
-
-            file_data = urlsafe_b64decode(file.get('data'))
-            file_stream = BytesIO(file_data)
-            file_stream.seek(0)
+            if attachment:
+                file = service.users().messages().attachments()\
+                    .get(id = attachment_id, userId = 'me', messageId = message_id).execute()
+    
+                file_data = urlsafe_b64decode(file.get('data'))
+                file_stream = BytesIO(file_data)
+                file_stream.seek(0)
+            else:
+                file_stream = None
 
             upload_to_mattermost(feature_id, file_stream, meta, mattermost,
-                                 channel_id)
-
+                                 channel_id)            
+            
             # Archive the message
             modify_body = {
                 "addLabelIds": [],
@@ -197,7 +208,7 @@ def process_email():
             }
             service.users().messages().modify(userId = "me",
                                               id = message_id,
-                                              body = modify_body).execute()
+                                              body = modify_body).execute()            
 
 
 if __name__ == "__main__":
