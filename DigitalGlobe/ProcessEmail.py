@@ -2,7 +2,7 @@ import config
 import os
 import pickle
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from io import BytesIO
 from xml.etree import ElementTree
 
@@ -183,7 +183,14 @@ def process_email():
             # print(f"Skipping {volcano} as it is not at code")
             # continue        
         
+        date_cutoff = datetime.utcnow() - timedelta(weeks = 1)
+        date_cutoff = date_cutoff.replace(tzinfo = timezone.utc)
+        
         for feature_id, meta in metadata.items():
+            # Check the date of this image. Make sure it is in the past week.
+            if meta['date'] < date_cutoff:
+                continue
+            
             # See if we have an attachment with this file name
             attachment, attachment_id = attachment_headers.get(feature_id, (None, None))
             
@@ -201,14 +208,14 @@ def process_email():
             upload_to_mattermost(feature_id, file_stream, meta, mattermost,
                                  channel_id)            
             
-            # Archive the message
-            modify_body = {
-                "addLabelIds": [],
-                "removeLabelIds": ['UNREAD', 'INBOX'],
-            }
-            service.users().messages().modify(userId = "me",
-                                              id = message_id,
-                                              body = modify_body).execute()            
+        # Archive the message
+        modify_body = {
+            "addLabelIds": [],
+            "removeLabelIds": ['UNREAD', 'INBOX'],
+        }
+        service.users().messages().modify(userId = "me",
+                                          id = message_id,
+                                          body = modify_body).execute()            
 
 
 if __name__ == "__main__":
