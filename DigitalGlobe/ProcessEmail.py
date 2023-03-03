@@ -145,7 +145,7 @@ def parse_metadata(metadata):
 
 def process_email():
     service = gmail_authenticate()
-    messages = search_messages(service, "from:noreply@digitalglobe.com")
+    messages = search_messages(service, "from:noreply@digitalglobe.com OR from:noreply@maxar.com")
     if not messages:
         print("No new messages")
         return        
