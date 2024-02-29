@@ -42,8 +42,7 @@ def get_colored_volcanoes():
 def connect_to_mattermost():
     mattermost = mattermostdriver.Driver({
         'url': config.MATTERMOST_URL,
-        'login_id': config.MATTERMOST_USER,
-        'password': config.MATTERMOST_PASSWORD,
+        'token': config.MATTERMOST_TOKEN,
         'port': config.MATTERMOST_PORT
     })
 
